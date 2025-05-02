@@ -1,3 +1,12 @@
 <resources>
     <string name="app_name">uvccam</string>
+    <string name="video_format_title">视频格式设置</string>
+    <string name="video_format_ok_button">确定</string>
+    <string name="video_format_cancel_button">取消</string>
+    <string name="video_format_format_yuv">YUV</string>
+    <string name="video_format_format_mjpeg">MJPEG</string>
+    <string name="format_label">格式:</string>
+    <string name="resolution_label">分辨率:</string>
+    <string name="framerate_label">帧率:</string>
+    <string name="apply_format">应用格式</string>
 </resources>
