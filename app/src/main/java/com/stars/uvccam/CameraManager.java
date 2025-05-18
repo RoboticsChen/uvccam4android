@@ -12,6 +12,7 @@ import com.herohan.uvcapp.ImageCapture;
 import com.serenegiant.usb.Size;
 import com.serenegiant.usb.UVCCamera;
 import com.serenegiant.usb.UVCControl;
+import com.serenegiant.usb.Format;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -24,6 +25,8 @@ import androidx.annotation.Nullable;
 import android.os.Handler;
 import android.os.Looper;
 import org.json.JSONObject;
+import java.util.HashMap;
+import java.util.ArrayList;
 
 public class CameraManager {
     private static final String TAG = "CameraManager";
@@ -401,7 +404,20 @@ public class CameraManager {
 
     private void loadSavedCameraParameters() {
         try {
+            // 先获取相机支持的格式列表
+            List<Format> supportedFormats = mCameraHelper.getSupportedFormatList();
+            if (supportedFormats == null || supportedFormats.isEmpty()) {
+                Log.w(TAG, "无法获取相机支持的格式列表，使用默认参数");
+                return;
+            }
+
+            // 构建可用的格式映射，用于验证
+            HashMap<Integer, List<Size>> supportedSizesMap = buildSupportedSizesMap(supportedFormats);
+
+            // 加载保存的配置
             JSONObject config = ConfigManager.loadConfig(mContext, mCurrentVendorId, mCurrentProductId);
+            Size configSize = null;
+
             if (config != null) {
                 int format = config.optInt("format", mPreviewFormat);
                 int width = config.optInt("width", mPreviewWidth);
@@ -412,12 +428,134 @@ public class CameraManager {
                         ", 分辨率=" + width + "x" + height +
                         ", 帧率=" + fps);
 
-                Size savedSize = new Size(format, width, height, fps, null);
-                setPreviewSize(savedSize);
+                configSize = new Size(format, width, height, fps, null);
+
+                // 验证配置的参数是否被相机支持
+                if (isSizeSupported(configSize, supportedSizesMap)) {
+                    Log.d(TAG, "配置的参数受支持，应用配置");
+                    setPreviewSize(configSize);
+                    return;
+                } else {
+                    Log.w(TAG, "配置的参数不受支持，将使用第一组支持的参数");
+                }
+            } else {
+                Log.d(TAG, "未找到已保存的配置，将使用第一组支持的参数");
+            }
+
+            // 如果配置不存在或不受支持，使用第一组支持的参数
+            Size firstSupportedSize = getFirstSupportedSize(supportedSizesMap);
+            if (firstSupportedSize != null) {
+                Log.d(TAG, "使用第一组受支持的参数: 格式=" + firstSupportedSize.type +
+                        ", 分辨率=" + firstSupportedSize.width + "x" + firstSupportedSize.height +
+                        ", 帧率=" + firstSupportedSize.fps);
+
+                // 应用第一组支持的参数
+                setPreviewSize(firstSupportedSize);
+
+                // 更新配置文件，保存新使用的参数
+                saveNewConfigParameters(firstSupportedSize);
+            } else {
+                Log.e(TAG, "无法找到相机支持的参数，使用默认值");
             }
         } catch (Exception e) {
             Log.e(TAG, "加载已保存的相机参数失败", e);
         }
+    }
+
+    // 构建相机支持的格式映射
+    private HashMap<Integer, List<Size>> buildSupportedSizesMap(List<Format> supportedFormats) {
+        HashMap<Integer, List<Size>> result = new HashMap<>();
+
+        for (Format format : supportedFormats) {
+            int type;
+            if (format.type == UVCCamera.UVC_VS_FORMAT_MJPEG) {
+                type = UVCCamera.UVC_VS_FRAME_MJPEG;
+            } else if (format.type == UVCCamera.UVC_VS_FORMAT_UNCOMPRESSED) {
+                type = UVCCamera.UVC_VS_FRAME_UNCOMPRESSED;
+            } else {
+                continue;  // 跳过不支持的格式类型
+            }
+
+            if (!result.containsKey(type)) {
+                result.put(type, new ArrayList<>());
+            }
+
+            List<Size> sizeList = result.get(type);
+
+            // 为每个描述符和帧率创建Size对象
+            for (Format.Descriptor descriptor : format.frameDescriptors) {
+                for (Format.Interval interval : descriptor.intervals) {
+                    Size size = new Size(type, descriptor.width, descriptor.height, interval.fps, null);
+                    sizeList.add(size);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    // 检查指定的Size是否被相机支持
+    private boolean isSizeSupported(Size size, HashMap<Integer, List<Size>> supportedSizesMap) {
+        if (!supportedSizesMap.containsKey(size.type)) {
+            return false;
+        }
+
+        List<Size> sizeList = supportedSizesMap.get(size.type);
+        for (Size supportedSize : sizeList) {
+            if (supportedSize.width == size.width &&
+                    supportedSize.height == size.height &&
+                    supportedSize.fps == size.fps) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // 获取第一组支持的参数
+    private Size getFirstSupportedSize(HashMap<Integer, List<Size>> supportedSizesMap) {
+        // 优先尝试MJPEG格式
+        if (supportedSizesMap.containsKey(UVCCamera.UVC_VS_FRAME_MJPEG) &&
+                !supportedSizesMap.get(UVCCamera.UVC_VS_FRAME_MJPEG).isEmpty()) {
+            return supportedSizesMap.get(UVCCamera.UVC_VS_FRAME_MJPEG).get(0);
+        }
+
+        // 其次尝试YUV格式
+        if (supportedSizesMap.containsKey(UVCCamera.UVC_VS_FRAME_UNCOMPRESSED) &&
+                !supportedSizesMap.get(UVCCamera.UVC_VS_FRAME_UNCOMPRESSED).isEmpty()) {
+            return supportedSizesMap.get(UVCCamera.UVC_VS_FRAME_UNCOMPRESSED).get(0);
+        }
+
+        return null;
+    }
+
+    // 保存新的配置参数
+    private void saveNewConfigParameters(Size size) {
+        if (size == null) return;
+
+        int exposure = 0;
+        int gain = 0;
+        int triggerPeriod = 0;
+        int isAutoExposure = 1;  // 默认自动曝光
+        int isColorMode = 1;     // 默认彩色模式
+
+        // 尝试从已有配置读取其他参数
+        JSONObject config = ConfigManager.loadConfig(mContext, mCurrentVendorId, mCurrentProductId);
+        if (config != null) {
+            exposure = config.optInt("exposure", 0);
+            gain = config.optInt("gain", 0);
+            triggerPeriod = config.optInt("triggerPeriod", 0);
+            isAutoExposure = config.optInt("isAutoExposure", 1);
+            isColorMode = config.optInt("isColorMode", 1);
+        }
+
+        // 保存更新后的配置
+        ConfigManager.saveConfig(mContext, mCurrentVendorId, mCurrentProductId,
+                size.type, size.width, size.height, size.fps,
+                exposure, gain, triggerPeriod, "", "",
+                isAutoExposure, isColorMode);
+
+        Log.d(TAG, "已更新配置文件，保存新使用的参数");
     }
 
     public List<UsbDevice> getDeviceList() {
@@ -437,6 +575,62 @@ public class CameraManager {
             Log.d(TAG, "设置默认预览尺寸: 格式=" + mPreviewFormat +
                     ", 分辨率=" + mPreviewWidth + "x" + mPreviewHeight +
                     ", 帧率=" + mPreviewFps);
+        }
+    }
+
+    // 退出参数面板时重新加载参数
+    public void reloadSavedParameters() {
+        try {
+            JSONObject config = ConfigManager.loadConfig(mContext, mCurrentVendorId, mCurrentProductId);
+            if (config != null) {
+                // 加载并应用预览尺寸
+                int format = config.optInt("format", mPreviewFormat);
+                int width = config.optInt("width", mPreviewWidth);
+                int height = config.optInt("height", mPreviewHeight);
+                int fps = config.optInt("fps", mPreviewFps);
+
+                Log.d(TAG, "重新加载相机参数: 格式=" + format +
+                        ", 分辨率=" + width + "x" + height +
+                        ", 帧率=" + fps);
+
+                Size savedSize = new Size(format, width, height, fps, null);
+                setPreviewSize(savedSize);
+
+                // 获取UVC控制接口
+                UVCControl control = getUVCControl();
+                if (control != null) {
+                    // 加载并应用曝光设置
+                    boolean isAutoExposure = config.optInt("isAutoExposure", 1) == 1;
+                    control.setExposureTimeAuto(isAutoExposure);
+
+                    // 如果是手动曝光，应用曝光时间和增益
+                    if (!isAutoExposure) {
+                        int exposure = config.optInt("exposure", 0);
+                        if (exposure > 0 && control.isExposureTimeAbsoluteEnable()) {
+                            control.setExposureTimeAbsolute(exposure);
+                        }
+
+                        int gain = config.optInt("gain", 0);
+                        if (gain > 0 && control.isGainEnable()) {
+                            control.setGain(gain);
+                        }
+                    }
+
+                    // 加载并应用彩色/黑白模式
+                    boolean isColorMode = config.optInt("isColorMode", 1) == 1;
+                    if (isColorMode) {
+                        control.resetSaturation();
+                    } else {
+                        control.setSaturation(0);
+                    }
+
+                    Log.d(TAG, "已重新应用曝光和颜色设置: " +
+                            "自动曝光=" + isAutoExposure +
+                            ", 彩色模式=" + isColorMode);
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "重新加载相机参数失败", e);
         }
     }
 }

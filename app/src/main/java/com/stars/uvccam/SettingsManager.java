@@ -114,7 +114,7 @@ public class SettingsManager implements CameraManager.CameraStateListener {
 
     @Override
     public void onCameraClosed() {
-        saveCurrentConfig();
+//        saveCurrentConfig();
     }
 
     @Override
@@ -202,7 +202,7 @@ public class SettingsManager implements CameraManager.CameraStateListener {
 
                 control.setExposureTimeAbsolute(exposureTime);
                 showToast("曝光时间已设置为: " + exposureTime + " us");
-                saveCurrentConfig();
+//                saveCurrentConfig();
             } catch (NumberFormatException e) {
                 showToast("请输入有效的曝光时间数值");
             }
@@ -236,7 +236,7 @@ public class SettingsManager implements CameraManager.CameraStateListener {
 
                 control.setGain(gain);
                 showToast("增益值已设置为: " + gain);
-                saveCurrentConfig();
+//                saveCurrentConfig();
             } catch (NumberFormatException e) {
                 showToast("请输入有效的增益值数值");
             }
@@ -254,7 +254,7 @@ public class SettingsManager implements CameraManager.CameraStateListener {
             int triggerPeriod = Integer.parseInt(mTriggerPeriodInput.getText().toString());
             // 实际控制相机的代码
             showToast("触发周期已设置为: " + triggerPeriod + " ms");
-            saveCurrentConfig();
+//            saveCurrentConfig();
         } catch (NumberFormatException e) {
             showToast("请输入有效的触发周期数值");
         }
@@ -316,7 +316,7 @@ public class SettingsManager implements CameraManager.CameraStateListener {
             showToast("切换到手动曝光模式");
         }
 
-        saveCurrentConfig();
+//        saveCurrentConfig();
     }
 
     // 切换彩色/黑白模式
@@ -347,7 +347,7 @@ public class SettingsManager implements CameraManager.CameraStateListener {
             showToast("已切换到黑白模式");
         }
 
-        saveCurrentConfig();
+//        saveCurrentConfig();
     }
 
     // 更新相机参数显示

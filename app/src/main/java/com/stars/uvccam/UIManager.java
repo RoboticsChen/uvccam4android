@@ -127,6 +127,11 @@ public class UIManager implements CameraManager.CameraStateListener {
         mCaptureButton = mMainControlPanelView.findViewById(R.id.capture);
         mOpenSettingsButton = mMainControlPanelView.findViewById(R.id.button_open_settings);
 
+        if (mCameraManager != null && mCameraManager.isCameraOpened()) {
+            // 重新加载并应用配置文件参数
+            mCameraManager.reloadSavedParameters();
+        }
+
         // 设置按钮状态
         boolean cameraOpened = mCameraManager != null && mCameraManager.isCameraOpened();
         setControlsEnabled(cameraOpened);
