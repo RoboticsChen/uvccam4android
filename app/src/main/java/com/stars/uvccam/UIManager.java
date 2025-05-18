@@ -3,7 +3,6 @@ package com.stars.uvccam;
 import android.content.Context;
 import android.hardware.usb.UsbDevice;
 import android.util.Log;
-import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.Button;
 import android.widget.FrameLayout;
@@ -12,19 +11,18 @@ import com.serenegiant.widget.AspectRatioSurfaceView;
 
 public class UIManager implements CameraManager.CameraStateListener {
     private static final String TAG = "UIManager";
-    private static final boolean DEBUG = true;
 
-    private Context mContext;
-    private MainActivity mMainActivity;
-    private CameraManager mCameraManager;
-    private FormatManager mFormatManager;
-    private SettingsManager mSettingsManager;
+    private final Context mContext;
+    private final MainActivity mMainActivity;
+    private final CameraManager mCameraManager;
+    private final FormatManager mFormatManager;
+    private final SettingsManager mSettingsManager;
 
     // UI组件
-    private View mMainControlPanelView;
-    private View mParamSettingView;
-    private FrameLayout mControlPanelContainer;
-    private AspectRatioSurfaceView mCameraPreview;
+    private final View mMainControlPanelView;
+    private final View mParamSettingView;
+    private final FrameLayout mControlPanelContainer;
+    private final AspectRatioSurfaceView mCameraPreview;
 
     // 主面板控制按钮
     private Button mOpenCameraButton;
@@ -43,25 +41,31 @@ public class UIManager implements CameraManager.CameraStateListener {
         mCameraManager = cameraManager;
         mFormatManager = formatManager;
         mSettingsManager = settingsManager;
-        
+
         if (context instanceof MainActivity) {
             mMainActivity = (MainActivity) context;
             mMainControlPanelView = mMainActivity.getMainControlPanelView();
             mParamSettingView = mMainActivity.getParamSettingView();
             mControlPanelContainer = mMainActivity.getControlPanelContainer();
             mCameraPreview = mMainActivity.getCameraPreview();
-            
+
             // 初始化UI组件
             initControlPanels();
+        } else {
+            mMainActivity = null;
+            mMainControlPanelView = null;
+            mParamSettingView = null;
+            mControlPanelContainer = null;
+            mCameraPreview = null;
         }
-        
+
         // 注册相机状态监听
-        mCameraManager.setStateListener(this);
+        cameraManager.setStateListener(this);
     }
 
     private void initControlPanels() {
-        if (mMainActivity == null) return;
-        
+        if (mMainActivity == null || mMainControlPanelView == null) return;
+
         // 获取主控制面板按钮
         mOpenCameraButton = mMainControlPanelView.findViewById(R.id.open_camera_button);
         mCloseCameraButton = mMainControlPanelView.findViewById(R.id.close_camera_button);
@@ -73,42 +77,44 @@ public class UIManager implements CameraManager.CameraStateListener {
         mCloseTestMainButton = mMainControlPanelView.findViewById(R.id.close_test_main_button);
         mCaptureButton = mMainControlPanelView.findViewById(R.id.capture);
         mOpenSettingsButton = mMainControlPanelView.findViewById(R.id.button_open_settings);
-        
+
         // 设置点击监听器
-        mOpenCameraButton.setOnClickListener(mMainActivity);
-        mCloseCameraButton.setOnClickListener(mMainActivity);
-        mOpenTest1Button.setOnClickListener(mMainActivity);
-        mCloseTest1Button.setOnClickListener(mMainActivity);
-        mOpenTest2Button.setOnClickListener(mMainActivity);
-        mCloseTest2Button.setOnClickListener(mMainActivity);
-        mOpenTestMainButton.setOnClickListener(mMainActivity);
-        mCloseTestMainButton.setOnClickListener(mMainActivity);
-        mCaptureButton.setOnClickListener(mMainActivity);
-        mOpenSettingsButton.setOnClickListener(mMainActivity);
-        
+        if (mOpenCameraButton != null) mOpenCameraButton.setOnClickListener(mMainActivity);
+        if (mCloseCameraButton != null) mCloseCameraButton.setOnClickListener(mMainActivity);
+        if (mOpenTest1Button != null) mOpenTest1Button.setOnClickListener(mMainActivity);
+        if (mCloseTest1Button != null) mCloseTest1Button.setOnClickListener(mMainActivity);
+        if (mOpenTest2Button != null) mOpenTest2Button.setOnClickListener(mMainActivity);
+        if (mCloseTest2Button != null) mCloseTest2Button.setOnClickListener(mMainActivity);
+        if (mOpenTestMainButton != null) mOpenTestMainButton.setOnClickListener(mMainActivity);
+        if (mCloseTestMainButton != null) mCloseTestMainButton.setOnClickListener(mMainActivity);
+        if (mCaptureButton != null) mCaptureButton.setOnClickListener(mMainActivity);
+        if (mOpenSettingsButton != null) mOpenSettingsButton.setOnClickListener(mMainActivity);
+
         // 禁用控制项，直到相机打开
         setControlsEnabled(false);
-        
+
         // 初始化参数设置面板
-        Button cancelSettingsButton = mParamSettingView.findViewById(R.id.button_cancel_settings);
-        Button saveSettingsButton = mParamSettingView.findViewById(R.id.button_save_settings);
-        
-        cancelSettingsButton.setOnClickListener(mMainActivity);
-        saveSettingsButton.setOnClickListener(mMainActivity);
-        
-        // 初始化设置管理器UI组件
-        mSettingsManager.initUIComponents(mParamSettingView);
-        
-        // 初始化格式管理器
-        mFormatManager.initialize(mParamSettingView, mCameraManager);
+        if (mParamSettingView != null) {
+            Button cancelSettingsButton = mParamSettingView.findViewById(R.id.button_cancel_settings);
+            Button saveSettingsButton = mParamSettingView.findViewById(R.id.button_save_settings);
+
+            if (cancelSettingsButton != null) cancelSettingsButton.setOnClickListener(mMainActivity);
+            if (saveSettingsButton != null) saveSettingsButton.setOnClickListener(mMainActivity);
+
+            // 初始化设置管理器UI组件
+            mSettingsManager.initUIComponents(mParamSettingView);
+
+            // 初始化格式管理器
+            mFormatManager.initialize(mParamSettingView, mCameraManager);
+        }
     }
 
     public void showMainControlPanel() {
-        if (mControlPanelContainer == null) return;
-        
+        if (mControlPanelContainer == null || mMainControlPanelView == null) return;
+
         mControlPanelContainer.removeAllViews();
         mControlPanelContainer.addView(mMainControlPanelView);
-        
+
         // 重新绑定控制面板按钮（避免引用丢失）
         mOpenCameraButton = mMainControlPanelView.findViewById(R.id.open_camera_button);
         mCloseCameraButton = mMainControlPanelView.findViewById(R.id.close_camera_button);
@@ -120,27 +126,18 @@ public class UIManager implements CameraManager.CameraStateListener {
         mCloseTestMainButton = mMainControlPanelView.findViewById(R.id.close_test_main_button);
         mCaptureButton = mMainControlPanelView.findViewById(R.id.capture);
         mOpenSettingsButton = mMainControlPanelView.findViewById(R.id.button_open_settings);
-        
+
         // 设置按钮状态
         boolean cameraOpened = mCameraManager != null && mCameraManager.isCameraOpened();
-        mOpenCameraButton.setEnabled(!cameraOpened);
-        mCloseCameraButton.setEnabled(cameraOpened);
-        mOpenTest1Button.setEnabled(cameraOpened);
-        mCloseTest1Button.setEnabled(cameraOpened);
-        mOpenTest2Button.setEnabled(cameraOpened);
-        mCloseTest2Button.setEnabled(cameraOpened);
-        mOpenTestMainButton.setEnabled(cameraOpened);
-        mCloseTestMainButton.setEnabled(cameraOpened);
-        mCaptureButton.setEnabled(cameraOpened);
-        mOpenSettingsButton.setEnabled(cameraOpened);
+        setControlsEnabled(cameraOpened);
     }
 
     public void showParamSettingPanel() {
-        if (mControlPanelContainer == null) return;
-        
+        if (mControlPanelContainer == null || mParamSettingView == null) return;
+
         mControlPanelContainer.removeAllViews();
         mControlPanelContainer.addView(mParamSettingView);
-        
+
         // 重置UI组件
         mSettingsManager.initUIComponents(mParamSettingView);
 
@@ -149,7 +146,6 @@ public class UIManager implements CameraManager.CameraStateListener {
 
         // 更新格式下拉框
         mFormatManager.updateFormats(mCameraManager);
-
     }
 
     private void setControlsEnabled(boolean enabled) {
@@ -162,33 +158,37 @@ public class UIManager implements CameraManager.CameraStateListener {
         if (mCloseTestMainButton != null) mCloseTestMainButton.setEnabled(enabled);
         if (mCaptureButton != null) mCaptureButton.setEnabled(enabled);
         if (mOpenSettingsButton != null) mOpenSettingsButton.setEnabled(enabled);
-        
+
         if (mOpenCameraButton != null) mOpenCameraButton.setEnabled(!enabled);
     }
 
     @Override
     public void onCameraOpened(UsbDevice device, Size previewSize) {
-        if (DEBUG) Log.d(TAG, "onCameraOpened: " + device.getDeviceName());
-        
+        Log.d(TAG, "onCameraOpened: " + device.getDeviceName());
+
         if (mCameraPreview != null && previewSize != null) {
             mCameraPreview.setAspectRatio(previewSize.width, previewSize.height);
         }
-        
+
         // 启用控制项
-        mMainActivity.runOnUiThread(() -> setControlsEnabled(true));
+        if (mMainActivity != null) {
+            mMainActivity.runOnUiThread(() -> setControlsEnabled(true));
+        }
     }
 
     @Override
     public void onCameraClosed() {
-        if (DEBUG) Log.d(TAG, "onCameraClosed");
-        
+        Log.d(TAG, "onCameraClosed");
+
         // 禁用控制项
-        mMainActivity.runOnUiThread(() -> setControlsEnabled(false));
+        if (mMainActivity != null) {
+            mMainActivity.runOnUiThread(() -> setControlsEnabled(false));
+        }
     }
 
     @Override
     public void onDeviceAttached(UsbDevice device) {
-        if (DEBUG) Log.d(TAG, "onDeviceAttached: " + device.getDeviceName());
+        Log.d(TAG, "onDeviceAttached: " + device.getDeviceName());
         // 不需要处理
     }
 }

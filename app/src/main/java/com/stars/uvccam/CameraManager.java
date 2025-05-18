@@ -14,6 +14,7 @@ import com.serenegiant.usb.UVCCamera;
 import com.serenegiant.usb.UVCControl;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.io.File;
 import android.content.Intent;
 import android.net.Uri;
@@ -26,12 +27,12 @@ import org.json.JSONObject;
 
 public class CameraManager {
     private static final String TAG = "CameraManager";
-    private static final boolean DEBUG = true;
 
-    private Context mContext;
+    private final Context mContext;
     private ICameraHelper mCameraHelper;
-    private boolean mIsCameraOpened = false;
-    
+    private final AtomicBoolean mIsCameraOpened = new AtomicBoolean(false);
+    private final Object mCameraLock = new Object();
+
     // 当前连接的设备信息
     private int mCurrentVendorId = -1;
     private int mCurrentProductId = -1;
@@ -46,155 +47,160 @@ public class CameraManager {
         void onCameraClosed();
         void onDeviceAttached(UsbDevice device);
     }
-    
+
     private CameraStateListener mStateListener;
-    
+
     public CameraManager(Context context) {
         mContext = context;
     }
-    
+
     public void setStateListener(CameraStateListener listener) {
         mStateListener = listener;
     }
-    
+
     public void initialize() {
-        if (DEBUG) Log.d(TAG, "initialize");
-        if (mCameraHelper == null) {
-            mCameraHelper = new CameraHelper();
-            mCameraHelper.setStateCallback(mUVCStateListener);
+        synchronized(mCameraLock) {
+            if (mCameraHelper == null) {
+                mCameraHelper = new CameraHelper();
+                mCameraHelper.setStateCallback(mUVCStateListener);
+            }
         }
     }
-    
+
     public void release() {
-        if (DEBUG) Log.d(TAG, "release");
-        if (mCameraHelper != null) {
-            if (mIsCameraOpened) {
+        synchronized(mCameraLock) {
+            if (mIsCameraOpened.get()) {
                 closeCamera();
             }
-            mCameraHelper.release();
-            mCameraHelper = null;
+
+            if (mCameraHelper != null) {
+                mCameraHelper.release();
+                mCameraHelper = null;
+            }
+            mIsCameraOpened.set(false);
         }
-        mIsCameraOpened = false;
     }
-    
+
     public void openCamera() {
-        if (mCameraHelper != null && !mIsCameraOpened) {
+        synchronized(mCameraLock) {
+            if (mCameraHelper == null || mIsCameraOpened.get()) {
+                showToast(mIsCameraOpened.get() ? "相机已经打开" : "相机初始化中");
+                return;
+            }
+
             final List<UsbDevice> list = mCameraHelper.getDeviceList();
-            if (list != null && list.size() > 0) {
+            if (list != null && !list.isEmpty()) {
                 mCameraHelper.selectDevice(list.get(0));
             } else {
                 showToast("没有找到相机设备");
             }
-        } else if (mIsCameraOpened) {
-            showToast("相机已经打开");
         }
     }
 
     public void closeCamera() {
-        if (mCameraHelper != null && mIsCameraOpened) {
+        synchronized(mCameraLock) {
+            if (mCameraHelper == null || !mIsCameraOpened.get()) {
+                return;
+            }
+
             try {
-                // First remove all surfaces to stop frame processing
+                Log.d(TAG, "停止预览");
+                mCameraHelper.stopPreview();
+                Thread.sleep(50);
+
+                // 先移除所有Surface以停止帧处理
                 if (mContext instanceof MainActivity) {
                     MainActivity activity = (MainActivity) mContext;
                     SurfaceHolder holder = activity.getCameraPreview().getHolder();
-                    if (holder != null && holder.getSurface() != null) {
+                    if (holder != null && holder.getSurface() != null && holder.getSurface().isValid()) {
+                        Log.d(TAG, "移除Surface");
                         mCameraHelper.removeSurface(holder.getSurface());
                     }
                 }
 
-                // Add a small delay to allow MediaCodec to complete operations
-                try {
-                    Thread.sleep(100);
-                } catch (InterruptedException e) {
-                    Log.e(TAG, "Sleep interrupted", e);
-                }
+                Log.d(TAG, "等待资源释放");
+                Thread.sleep(200);
 
-                // Now close the camera
+                Log.d(TAG, "正在关闭相机");
                 mCameraHelper.closeCamera();
-                mIsCameraOpened = false;
+                Log.d(TAG, "相机已关闭");
+
+                Log.d(TAG, "等待资源释放");
+                Thread.sleep(200);
             } catch (Exception e) {
-                Log.e(TAG, "Error closing camera", e);
+                Log.e(TAG, "关闭相机时出错", e);
             }
         }
     }
-    
+
     public void addSurface(Surface surface) {
-        if (mCameraHelper != null) {
+        if (surface != null && surface.isValid() && mCameraHelper != null) {
             mCameraHelper.addSurface(surface, false);
         }
     }
-    
+
     public void removeSurface(Surface surface) {
-        if (mCameraHelper != null) {
+        if (surface != null && surface.isValid() && mCameraHelper != null) {
             mCameraHelper.removeSurface(surface);
         }
     }
-    
+
     public boolean isCameraOpened() {
-        return mIsCameraOpened;
+        return mIsCameraOpened.get();
     }
-    
+
     public int getCurrentVendorId() {
         return mCurrentVendorId;
     }
-    
+
     public int getCurrentProductId() {
         return mCurrentProductId;
     }
-    
+
     public Size getPreviewSize() {
-        if (mCameraHelper != null && mIsCameraOpened) {
+        if (mCameraHelper != null && mIsCameraOpened.get()) {
             return mCameraHelper.getPreviewSize();
         }
         return new Size(mPreviewFormat, mPreviewWidth, mPreviewHeight, mPreviewFps, null);
     }
 
-    /**
-     * 捕获当前预览帧并保存为图像文件
-     */
     public void captureImage() {
-        if (!mIsCameraOpened || mCameraHelper == null) {
+        if (!mIsCameraOpened.get() || mCameraHelper == null) {
             showToast("相机未打开，无法拍照");
             return;
         }
 
         try {
-            // 获取保存路径
             String filePath = Utils.getSavePhotoPath(mContext);
             File file = new File(filePath);
 
-            // 确保父目录存在
             File parentDir = file.getParentFile();
             if (parentDir != null && !parentDir.exists()) {
-                parentDir.mkdirs();
+                if (!parentDir.mkdirs()) {
+                    showToast("无法创建保存目录");
+                    return;
+                }
             }
 
-            // 创建输出选项
             ImageCapture.OutputFileOptions options =
                     new ImageCapture.OutputFileOptions.Builder(file).build();
 
-            // 拍照并保存
             mCameraHelper.takePicture(options, new ImageCapture.OnImageCaptureCallback() {
                 @Override
                 public void onImageSaved(@NonNull ImageCapture.OutputFileResults outputFileResults) {
-                    // 图像保存成功
                     Uri savedUri = outputFileResults.getSavedUri();
                     String path = savedUri != null ? savedUri.getPath() : file.getAbsolutePath();
                     showToast("图像已保存至: " + path);
 
-                    // 通知媒体库更新
                     if (mContext != null) {
                         Intent mediaScanIntent = new Intent(Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
                         mediaScanIntent.setData(savedUri != null ? savedUri : Uri.fromFile(file));
                         mContext.sendBroadcast(mediaScanIntent);
                     }
-
-                    Log.d(TAG, "图像已保存: " + path);
                 }
 
                 @Override
                 public void onError(int imageCaptureError, @NonNull String message, @Nullable Throwable cause) {
-                    // 图像保存失败
                     showToast("保存图像失败: " + message);
                     Log.e(TAG, "保存图像失败: " + message, cause);
                 }
@@ -206,104 +212,93 @@ public class CameraManager {
     }
 
     public void setPreviewSize(Size size) {
-        if (mCameraHelper != null && mIsCameraOpened) {
-            try {
-                Log.d(TAG, "设置预览尺寸: " + size.type + ", " +
-                        size.width + "x" + size.height + ", " + size.fps + "fps");
+        if (mCameraHelper == null || !mIsCameraOpened.get() || size == null) {
+            Log.w(TAG, "无法设置预览尺寸：相机未打开或尺寸无效");
+            return;
+        }
 
-                // 保存当前Surface
-                Surface previewSurface = null;
+        try {
+            Log.d(TAG, "设置预览尺寸: " + size.type + ", " +
+                    size.width + "x" + size.height + ", " + size.fps + "fps");
+
+            Surface previewSurface = null;
+            if (mContext instanceof MainActivity) {
+                MainActivity activity = (MainActivity) mContext;
+                SurfaceHolder holder = activity.getCameraPreview().getHolder();
+                if (holder != null && holder.getSurface() != null && holder.getSurface().isValid()) {
+                    previewSurface = holder.getSurface();
+                    mCameraHelper.removeSurface(previewSurface);
+                }
+            }
+
+            mCameraHelper.stopPreview();
+            mCameraHelper.setPreviewSize(size);
+
+            mPreviewWidth = size.width;
+            mPreviewHeight = size.height;
+            mPreviewFormat = size.type;
+            mPreviewFps = size.fps;
+
+            mCameraHelper.startPreview();
+
+            if (previewSurface != null && previewSurface.isValid()) {
+                mCameraHelper.addSurface(previewSurface, false);
+            }
+
+            if (mContext instanceof MainActivity) {
+                MainActivity activity = (MainActivity) mContext;
+                activity.runOnUiThread(() ->
+                        activity.getCameraPreview().setAspectRatio(size.width, size.height));
+            }
+
+            showToast(String.format("已应用格式: %s, %dx%d, %dfps",
+                    (size.type == UVCCamera.UVC_VS_FRAME_MJPEG ? "MJPEG" : "YUV"),
+                    size.width, size.height, size.fps));
+
+        } catch (Exception e) {
+            Log.e(TAG, "设置预览尺寸失败", e);
+            showToast("设置预览尺寸失败");
+
+            try {
+                mCameraHelper.startPreview();
                 if (mContext instanceof MainActivity) {
                     MainActivity activity = (MainActivity) mContext;
                     SurfaceHolder holder = activity.getCameraPreview().getHolder();
-                    if (holder != null) {
-                        previewSurface = holder.getSurface();
-                        // 先移除Surface
-                        mCameraHelper.removeSurface(previewSurface);
+                    if (holder != null && holder.getSurface() != null && holder.getSurface().isValid()) {
+                        mCameraHelper.addSurface(holder.getSurface(), false);
                     }
                 }
-
-                // 停止预览
-                mCameraHelper.stopPreview();
-
-                // 应用新的格式设置
-                mCameraHelper.setPreviewSize(size);
-
-                // 更新当前预览尺寸
-                mPreviewWidth = size.width;
-                mPreviewHeight = size.height;
-                mPreviewFormat = size.type;
-                mPreviewFps = size.fps;
-
-                // 重新开始预览
-                mCameraHelper.startPreview();
-
-                // 重新添加Surface
-                if (previewSurface != null) {
-                    mCameraHelper.addSurface(previewSurface, false);
-                }
-
-                // 更新UI显示预览尺寸
-                if (mContext instanceof MainActivity) {
-                    MainActivity activity = (MainActivity) mContext;
-                    activity.runOnUiThread(() -> {
-                        activity.getCameraPreview().setAspectRatio(size.width, size.height);
-                    });
-                }
-
-                showToast(String.format("已应用格式: %s, %dx%d, %dfps",
-                        (size.type == UVCCamera.UVC_VS_FRAME_MJPEG ? "MJPEG" : "YUV"),
-                        size.width, size.height, size.fps));
-
-            } catch (Exception e) {
-                Log.e(TAG, "设置预览尺寸失败", e);
-                showToast("设置预览尺寸失败: " + e.getMessage());
-
-                // 尝试恢复预览
-                try {
-                    mCameraHelper.startPreview();
-
-                    // 尝试重新添加Surface
-                    if (mContext instanceof MainActivity) {
-                        MainActivity activity = (MainActivity) mContext;
-                        SurfaceHolder holder = activity.getCameraPreview().getHolder();
-                        if (holder != null) {
-                            mCameraHelper.addSurface(holder.getSurface(), false);
-                        }
-                    }
-                } catch (Exception ex) {
-                    Log.e(TAG, "恢复预览失败", ex);
-                }
+            } catch (Exception ex) {
+                Log.e(TAG, "恢复预览失败", ex);
             }
-        } else {
-            Log.w(TAG, "无法设置预览尺寸：相机未打开");
         }
     }
-    
+
     public UVCControl getUVCControl() {
-        if (mCameraHelper != null && mIsCameraOpened) {
+        if (mCameraHelper != null && mIsCameraOpened.get()) {
             return mCameraHelper.getUVCControl();
         }
         return null;
     }
-    
+
     public List<com.serenegiant.usb.Format> getSupportedFormatList() {
-        if (mCameraHelper != null && mIsCameraOpened) {
+        if (mCameraHelper != null && mIsCameraOpened.get()) {
             return mCameraHelper.getSupportedFormatList();
         }
         return null;
     }
-    
+
     private void showToast(String message) {
         if (mContext != null) {
-            Toast.makeText(mContext, message, Toast.LENGTH_SHORT).show();
+            new Handler(Looper.getMainLooper()).post(() ->
+                    Toast.makeText(mContext, message, Toast.LENGTH_SHORT).show());
         }
     }
-    
+
     private final ICameraHelper.StateCallback mUVCStateListener = new ICameraHelper.StateCallback() {
         @Override
         public void onAttach(UsbDevice device) {
-            if (DEBUG) Log.v(TAG, "onAttach: " + device.getDeviceName());
+            Log.v(TAG, "onAttach: " + device.getDeviceName());
             if (mStateListener != null) {
                 mStateListener.onDeviceAttached(device);
             }
@@ -312,80 +307,64 @@ public class CameraManager {
 
         @Override
         public void onDeviceOpen(UsbDevice device, boolean isFirstOpen) {
-            if (DEBUG) Log.v(TAG, "onDeviceOpen: " + isFirstOpen);
+            Log.v(TAG, "onDeviceOpen: " + isFirstOpen);
             mCameraHelper.openCamera();
         }
 
         @Override
         public void onCameraOpen(UsbDevice device) {
-            if (DEBUG) Log.v(TAG, "onCameraOpen");
-            
+            Log.v(TAG, "onCameraOpen");
+
             mCurrentVendorId = device.getVendorId();
             mCurrentProductId = device.getProductId();
-            mIsCameraOpened = true;
+            mIsCameraOpened.set(true);
 
+            // 先加载并应用配置
             loadSavedCameraParameters();
 
-            // 获取当前预览尺寸
-            Size size = mCameraHelper.getPreviewSize();
-
-            if (size != null) {
-                mPreviewWidth = size.width;
-                mPreviewHeight = size.height;
-                mPreviewFps = size.fps;
-                mPreviewFormat = size.type;
-
-                // 更新预览窗比例
-                if (mContext instanceof MainActivity) {
-                    MainActivity activity = (MainActivity) mContext;
-                    activity.runOnUiThread(() -> {
-                        activity.getCameraPreview().setAspectRatio(size.width, size.height);
-                    });
-                }
-            }
-
-            // 通知监听器相机已打开 - 先通知，让监听器有机会加载配置
-            if (mStateListener != null) {
-                mStateListener.onCameraOpened(device, size);
-            }
-
-            // 延迟一点开始预览，确保配置已应用
+            // 添加短暂延时确保配置已应用，然后再获取预览尺寸
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                try {
-                    // 开始预览
-                    if (mCameraHelper != null && mIsCameraOpened) {
-                        mCameraHelper.startPreview();
-                        Log.d(TAG, "相机预览已启动");
-                    }
-                } catch (Exception e) {
-                    Log.e(TAG, "启动预览失败", e);
+                // 在延时后获取当前尺寸(此时应已是配置的值)并更新预览框
+                Size size = getPreviewSize();
+                if (size != null && mContext instanceof MainActivity) {
+                    MainActivity activity = (MainActivity) mContext;
+                    activity.runOnUiThread(() ->
+                            activity.getCameraPreview().setAspectRatio(size.width, size.height));
                 }
-            }, 100); // 延迟100ms
+
+                // 通知监听器
+                if (mStateListener != null) {
+                    mStateListener.onCameraOpened(device, size);
+                }
+
+                // 开始预览
+                startCameraPreview();
+            }, 100); // 短暂延迟让设置生效
         }
 
         @Override
         public void onCameraClose(UsbDevice device) {
-            if (DEBUG) Log.v(TAG, "onCameraClose");
-            
-            if (mCameraHelper != null) {
-                // 停止预览
-                try {
-                    if (mContext instanceof MainActivity) {
-                        MainActivity activity = (MainActivity) mContext;
-                        SurfaceHolder holder = activity.getCameraPreview().getHolder();
-                        if (holder != null && holder.getSurface() != null) {
-                            mCameraHelper.removeSurface(holder.getSurface());
+            Log.v(TAG, "onCameraClose");
+
+            synchronized(mCameraLock) {
+                if (mCameraHelper != null) {
+                    try {
+                        if (mContext instanceof MainActivity) {
+                            MainActivity activity = (MainActivity) mContext;
+                            SurfaceHolder holder = activity.getCameraPreview().getHolder();
+                            if (holder != null && holder.getSurface() != null && holder.getSurface().isValid()) {
+                                mCameraHelper.removeSurface(holder.getSurface());
+                            }
                         }
+                        mCameraHelper.stopPreview();
+                    } catch (Exception e) {
+                        Log.e(TAG, "停止预览失败", e);
                     }
-                    mCameraHelper.stopPreview();
-                } catch (Exception e) {
-                    Log.e(TAG, "Error stopping preview", e);
                 }
+
+                mIsCameraOpened.set(false);
             }
-            
-            mIsCameraOpened = false;
-            
-            // 通知监听器
+
             if (mStateListener != null) {
                 mStateListener.onCameraClosed();
             }
@@ -393,25 +372,37 @@ public class CameraManager {
 
         @Override
         public void onDeviceClose(UsbDevice device) {
-            if (DEBUG) Log.v(TAG, "onDeviceClose");
+            Log.v(TAG, "onDeviceClose");
         }
 
         @Override
         public void onDetach(UsbDevice device) {
-            if (DEBUG) Log.v(TAG, "onDetach");
+            Log.v(TAG, "onDetach");
         }
 
         @Override
         public void onCancel(UsbDevice device) {
-            if (DEBUG) Log.v(TAG, "onCancel");
+            Log.v(TAG, "onCancel");
         }
     };
+
+    private void startCameraPreview() {
+        synchronized(mCameraLock) {
+            try {
+                if (mCameraHelper != null && mIsCameraOpened.get()) {
+                    mCameraHelper.startPreview();
+                    Log.d(TAG, "相机预览已启动");
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "启动预览失败", e);
+            }
+        }
+    }
 
     private void loadSavedCameraParameters() {
         try {
             JSONObject config = ConfigManager.loadConfig(mContext, mCurrentVendorId, mCurrentProductId);
             if (config != null) {
-                // 从配置中获取格式参数
                 int format = config.optInt("format", mPreviewFormat);
                 int width = config.optInt("width", mPreviewWidth);
                 int height = config.optInt("height", mPreviewHeight);
@@ -421,10 +412,7 @@ public class CameraManager {
                         ", 分辨率=" + width + "x" + height +
                         ", 帧率=" + fps);
 
-                // 创建新的尺寸对象
                 Size savedSize = new Size(format, width, height, fps, null);
-
-                // 应用保存的格式设置
                 setPreviewSize(savedSize);
             }
         } catch (Exception e) {
@@ -432,7 +420,6 @@ public class CameraManager {
         }
     }
 
-    // 获取当前已连接的USB设备列表
     public List<UsbDevice> getDeviceList() {
         if (mCameraHelper != null) {
             return mCameraHelper.getDeviceList();
@@ -440,7 +427,6 @@ public class CameraManager {
         return null;
     }
 
-    // 设置默认的预览尺寸，在相机打开前调用
     public void setDefaultPreviewSize(Size size) {
         if (size != null) {
             mPreviewFormat = size.type;

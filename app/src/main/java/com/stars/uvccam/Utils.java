@@ -9,17 +9,16 @@ import java.util.Date;
 import java.util.Locale;
 
 public class Utils {
-    private static String BaseStoragePath = null;
     private static final String APP_NAME = "UVCCamera";
 
-    public static void checkBaseStoragePath(Context context) {
-        if (BaseStoragePath == null) {
-            BaseStoragePath = Environment.getExternalStorageDirectory().getPath() + File.separator + APP_NAME;
-        }
-    }
-
     public static String getSavePhotoPath(Context context) {
-        checkBaseStoragePath(context);
+        if (context == null) {
+            throw new IllegalArgumentException("Context cannot be null");
+        }
+
+        // 获取基础存储路径
+        String baseStoragePath = Environment.getExternalStorageDirectory().getPath()
+                + File.separator + APP_NAME;
 
         // 创建日期格式化工具
         SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMdd", Locale.getDefault());
@@ -29,10 +28,13 @@ public class Utils {
         String dateString = dateFormat.format(currentDate);
         String timeString = timeFormat.format(currentDate);
 
-        String parentPath = BaseStoragePath + File.separator + dateString + File.separator + "photo";
+        String parentPath = baseStoragePath + File.separator + dateString + File.separator + "photo";
         File folder = new File(parentPath);
         if (!folder.exists()) {
-            folder.mkdirs();
+            boolean created = folder.mkdirs();
+            if (!created) {
+                throw new RuntimeException("无法创建保存目录: " + parentPath);
+            }
         }
         return parentPath + File.separator + timeString + ".jpg";
     }

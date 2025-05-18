@@ -22,7 +22,6 @@ import com.serenegiant.usb.Size;
 import com.serenegiant.usb.UVCCamera;
 
 public class MainActivity extends AppCompatActivity implements View.OnClickListener {
-    private static final boolean DEBUG = true;
     private static final String TAG = MainActivity.class.getSimpleName();
     private static final String ADMIN_PASSWORD = "3807";
     private static final int REQUEST_STORAGE_PERMISSION = 101;
@@ -46,60 +45,67 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         setTitle("相机控制");
 
         checkAndRequestPermissions();
-
-        // 初始化UI
         initViews();
-        
+
         // 初始化管理器
         mCameraManager = new CameraManager(this);
         mFormatManager = new FormatManager(this);
         mSettingsManager = new SettingsManager(this, mCameraManager, mFormatManager);
         mUIManager = new UIManager(this, mCameraManager, mFormatManager, mSettingsManager);
-        
-        // 设置相机预览回调
+
         setupCameraPreview();
     }
 
     @Override
     protected void onStart() {
         super.onStart();
-        mCameraManager.initialize();
-        JSONObject config = null;
 
-        // 如果相机已连接，尝试获取设备ID
-        List<UsbDevice> devices = mCameraManager.getDeviceList();
-        if (devices != null && !devices.isEmpty()) {
-            UsbDevice device = devices.get(0);
-            int vendorId = device.getVendorId();
-            int productId = device.getProductId();
+        if (mCameraManager != null) {
+            mCameraManager.initialize();
 
-            // 加载此设备的配置
-            config = ConfigManager.loadConfig(this, vendorId, productId);
-        }
+            // 如果相机已连接，尝试获取设备ID并加载配置
+            List<UsbDevice> devices = mCameraManager.getDeviceList();
+            if (devices != null && !devices.isEmpty()) {
+                UsbDevice device = devices.get(0);
+                int vendorId = device.getVendorId();
+                int productId = device.getProductId();
 
-        // 如果找到配置，预先设置相机参数
-        if (config != null) {
-            int format = config.optInt("format", UVCCamera.UVC_VS_FRAME_MJPEG);
-            int width = config.optInt("width", UVCCamera.DEFAULT_PREVIEW_WIDTH);
-            int height = config.optInt("height", UVCCamera.DEFAULT_PREVIEW_HEIGHT);
-            int fps = config.optInt("fps", UVCCamera.DEFAULT_PREVIEW_FPS);
+                JSONObject config = ConfigManager.loadConfig(this, vendorId, productId);
+                if (config != null) {
+                    int format = config.optInt("format", UVCCamera.UVC_VS_FRAME_MJPEG);
+                    int width = config.optInt("width", UVCCamera.DEFAULT_PREVIEW_WIDTH);
+                    int height = config.optInt("height", UVCCamera.DEFAULT_PREVIEW_HEIGHT);
+                    int fps = config.optInt("fps", UVCCamera.DEFAULT_PREVIEW_FPS);
 
-            Size savedSize = new Size(format, width, height, fps, null);
-            mCameraManager.setDefaultPreviewSize(savedSize);
-            mCameraPreview.setAspectRatio(width, height);
+                    Size savedSize = new Size(format, width, height, fps, null);
+                    mCameraManager.setDefaultPreviewSize(savedSize);
+
+                    if (mCameraPreview != null) {
+                        mCameraPreview.setAspectRatio(width, height);
+                    }
+                }
+            }
         }
     }
 
     @Override
     protected void onStop() {
-        mSettingsManager.saveCurrentConfig();
-        mCameraManager.release();
+        if (mSettingsManager != null) {
+            mSettingsManager.saveCurrentConfig();
+        }
+
+        if (mCameraManager != null) {
+            mCameraManager.release();
+        }
         super.onStop();
     }
 
     @Override
     protected void onDestroy() {
-        mCameraManager.release();
+        if (mCameraManager != null) {
+            mCameraManager.release();
+            mCameraManager = null;
+        }
         super.onDestroy();
     }
 
@@ -132,47 +138,51 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         // 初始化相机预览
         mCameraPreview = findViewById(R.id.camera_preview);
         mControlPanelContainer = findViewById(R.id.control_panel_container);
-        
+
         // 加载控制面板
         LayoutInflater inflater = LayoutInflater.from(this);
         mMainControlPanelView = inflater.inflate(R.layout.main_control_panel, mControlPanelContainer, false);
         mParamSettingView = inflater.inflate(R.layout.param_setting_panel, mControlPanelContainer, false);
-        
+
         // 默认显示主控制面板
         mControlPanelContainer.addView(mMainControlPanelView);
     }
 
     private void setupCameraPreview() {
-        mCameraPreview.getHolder().addCallback(new SurfaceHolder.Callback() {
-            @Override
-            public void surfaceCreated(@NonNull SurfaceHolder holder) {
-                if (mCameraManager != null) {
-                    mCameraManager.addSurface(holder.getSurface());
+        if (mCameraPreview != null) {
+            mCameraPreview.getHolder().addCallback(new SurfaceHolder.Callback() {
+                @Override
+                public void surfaceCreated(@NonNull SurfaceHolder holder) {
+                    if (mCameraManager != null) {
+                        mCameraManager.addSurface(holder.getSurface());
+                    }
                 }
-            }
 
-            @Override
-            public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int width, int height) {
-                // 不需要处理
-            }
-
-            @Override
-            public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
-                if (mCameraManager != null) {
-                    mCameraManager.removeSurface(holder.getSurface());
+                @Override
+                public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int width, int height) {
+                    // 不需要处理
                 }
-            }
-        });
+
+                @Override
+                public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
+                    if (mCameraManager != null) {
+                        mCameraManager.removeSurface(holder.getSurface());
+                    }
+                }
+            });
+        }
     }
 
     @Override
     public void onClick(View v) {
+        if (v == null) return;
+
         int id = v.getId();
 
         if (id == R.id.open_camera_button) {
-            mCameraManager.openCamera();
+            if (mCameraManager != null) mCameraManager.openCamera();
         } else if (id == R.id.close_camera_button) {
-            mCameraManager.closeCamera();
+            if (mCameraManager != null) mCameraManager.closeCamera();
         } else if (id == R.id.open_test_1_button) {
             Toast.makeText(this, "开始测试 1", Toast.LENGTH_SHORT).show();
             // 在这里添加测试1的逻辑
@@ -192,19 +202,20 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             Toast.makeText(this, "关闭主筛查", Toast.LENGTH_SHORT).show();
             // 在这里添加关闭主筛查的逻辑
         } else if (id == R.id.capture) {
-            Toast.makeText(this, "捕获图像帧", Toast.LENGTH_SHORT).show();
-            mCameraManager.captureImage();
+            if (mCameraManager != null) mCameraManager.captureImage();
         } else if (id == R.id.button_open_settings) {
             showPasswordDialog();
         } else if (id == R.id.auto_exposure) {
-            mSettingsManager.toggleAutoExposure();
+            if (mSettingsManager != null) mSettingsManager.toggleAutoExposure();
         } else if (id == R.id.color_mode) {
-            mSettingsManager.toggleColorMode();
+            if (mSettingsManager != null) mSettingsManager.toggleColorMode();
         } else if (id == R.id.button_cancel_settings) {
-            mUIManager.showMainControlPanel();
+            if (mUIManager != null) mUIManager.showMainControlPanel();
         } else if (id == R.id.button_save_settings) {
-            mSettingsManager.saveParamsFromUI();
-            mUIManager.showMainControlPanel();
+            if (mSettingsManager != null) {
+                mSettingsManager.saveParamsFromUI();
+                mUIManager.showMainControlPanel();
+            }
         }
     }
 
@@ -221,7 +232,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             String password = passwordInput.getText().toString();
             if (ADMIN_PASSWORD.equals(password)) {
                 dialog.dismiss();
-                mUIManager.showParamSettingPanel();
+                if (mUIManager != null) mUIManager.showParamSettingPanel();
             } else {
                 Toast.makeText(this, "密码错误", Toast.LENGTH_SHORT).show();
             }
@@ -239,11 +250,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     public View getParamSettingView() {
         return mParamSettingView;
     }
-    
+
     public FrameLayout getControlPanelContainer() {
         return mControlPanelContainer;
     }
-    
+
     public AspectRatioSurfaceView getCameraPreview() {
         return mCameraPreview;
     }
