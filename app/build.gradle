@@ -37,4 +37,5 @@ dependencies {
     androidTestImplementation libs.espresso.core
 
     implementation 'com.herohan:UVCAndroid:1.0.9'
+    implementation 'com.licheedev:android-serialport:2.1.5'
 }

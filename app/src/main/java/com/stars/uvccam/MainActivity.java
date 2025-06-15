@@ -1,12 +1,16 @@
 package com.stars.uvccam;
 
 import android.app.Dialog;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.SurfaceHolder;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.TextView;
 import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
@@ -37,6 +41,10 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private UIManager mUIManager;
     private FormatManager mFormatManager;
     private SettingsManager mSettingsManager;
+    private UltrasonicSerialManager mUltrasonicManager;
+    private TriggerSerialManager mTriggerManager;
+    private Handler mDeviceMonitorHandler;
+    private int mCurrentDistance = -1;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,8 +60,80 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         mFormatManager = new FormatManager(this);
         mSettingsManager = new SettingsManager(this, mCameraManager, mFormatManager);
         mUIManager = new UIManager(this, mCameraManager, mFormatManager, mSettingsManager);
+        mDeviceMonitorHandler = new Handler(Looper.getMainLooper());
 
+        initSerialManagers();
         setupCameraPreview();
+    }
+
+    private void initSerialManagers() {
+        String ultrasonicPath = UsbDeviceDetector.findUltrasonicDevice();
+        String triggerPath = UsbDeviceDetector.findTriggerDevice();
+
+        if (ultrasonicPath == null) {
+            Toast.makeText(this, "未找到超声传感器设备", Toast.LENGTH_LONG).show();
+            Log.e(TAG, UsbDeviceDetector.getDeviceStatusReport());
+            return;
+        }
+
+        if (triggerPath == null) {
+            Toast.makeText(this, "未找到触发器设备", Toast.LENGTH_LONG).show();
+            Log.e(TAG, UsbDeviceDetector.getDeviceStatusReport());
+            return;
+        }
+
+        // 使用检测到的路径初始化
+        mUltrasonicManager = new UltrasonicSerialManager(ultrasonicPath, 9600);
+        mTriggerManager = new TriggerSerialManager(triggerPath, 115200);
+
+        Log.i(TAG, "设备路径自动配置:");
+        Log.i(TAG, "超声传感器: " + ultrasonicPath);
+        Log.i(TAG, "触发器: " + triggerPath);
+        mUltrasonicManager.setOnDistanceDataListener(new UltrasonicSerialManager.OnDistanceDataListener() {
+            @Override
+            public void onDistanceReceived(int distance) {
+                mCurrentDistance = distance;
+                updateDistanceDisplay();
+            }
+
+            @Override
+            public void onInvalidFrame(String frameHex, String error) {
+                // 可以选择显示错误信息
+            }
+
+            @Override
+            public void onError(String error) {
+                Toast.makeText(MainActivity.this, "超声传感器错误: " + error, Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    private void startDeviceMonitoring() {
+        mDeviceMonitorHandler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (mUltrasonicManager != null &&
+                        !UsbDeviceDetector.isDeviceConnected(mUltrasonicManager.getDevicePath())) {
+                    Toast.makeText(MainActivity.this, "超声传感器设备断开连接", Toast.LENGTH_SHORT).show();
+                    mUltrasonicManager.stop();
+                }
+
+                if (mTriggerManager != null &&
+                        !UsbDeviceDetector.isDeviceConnected(mTriggerManager.getDevicePath())) {
+                    Toast.makeText(MainActivity.this, "触发器设备断开连接", Toast.LENGTH_SHORT).show();
+                    mTriggerManager.stop();
+                }
+
+                // 继续监控
+                mDeviceMonitorHandler.postDelayed(this, 5000);
+            }
+        }, 5000);
+    }
+
+    private void stopDeviceMonitoring() {
+        if (mDeviceMonitorHandler != null) {
+            mDeviceMonitorHandler.removeCallbacksAndMessages(null);
+        }
     }
 
     @Override
@@ -86,6 +166,10 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 }
             }
         }
+        if (mUltrasonicManager != null) {
+            mUltrasonicManager.start();
+        }
+        startDeviceMonitoring();
     }
 
     @Override
@@ -97,6 +181,16 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         if (mCameraManager != null) {
             mCameraManager.release();
         }
+
+        stopDeviceMonitoring();
+
+        if (mUltrasonicManager != null) {
+            mUltrasonicManager.stop();
+        }
+        if (mTriggerManager != null) {
+            mTriggerManager.stop();
+        }
+
         super.onStop();
     }
 
@@ -105,6 +199,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         if (mCameraManager != null) {
             mCameraManager.release();
             mCameraManager = null;
+        }
+        if (mUltrasonicManager != null) {
+            mUltrasonicManager.destroy();
+        }
+        if (mTriggerManager != null) {
+            mTriggerManager.destroy();
         }
         super.onDestroy();
     }
@@ -184,11 +284,18 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         } else if (id == R.id.close_camera_button) {
             if (mCameraManager != null) mCameraManager.closeCamera();
         } else if (id == R.id.open_test_1_button) {
-            Toast.makeText(this, "开始测试 1", Toast.LENGTH_SHORT).show();
-            // 在这里添加测试1的逻辑
+            boolean isTest1Running = mUIManager.onStartTest1();
+            if (!isTest1Running){
+                Toast.makeText(this, "开始测试 1", Toast.LENGTH_SHORT).show();
+                mTriggerManager.start();
+            }else{
+                mCameraManager.captureImage();
+                if (mTriggerManager.isRunning()) mTriggerManager.stop();
+            }
         } else if (id == R.id.close_test_1_button) {
             Toast.makeText(this, "关闭测试 1", Toast.LENGTH_SHORT).show();
-            // 在这里添加关闭测试1的逻辑
+            mUIManager.onStopTest1();
+            if (mTriggerManager.isRunning()) mTriggerManager.stop();
         } else if (id == R.id.open_test_2_button) {
             Toast.makeText(this, "开始测试 2", Toast.LENGTH_SHORT).show();
             // 在这里添加测试2的逻辑
@@ -201,9 +308,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         } else if (id == R.id.close_test_main_button) {
             Toast.makeText(this, "关闭主筛查", Toast.LENGTH_SHORT).show();
             // 在这里添加关闭主筛查的逻辑
-        } else if (id == R.id.capture) {
-            if (mCameraManager != null) mCameraManager.captureImage();
-        } else if (id == R.id.button_open_settings) {
+        }
+//        else if (id == R.id.capture) {
+//            if (mCameraManager != null) mCameraManager.captureImage();
+//        }
+        else if (id == R.id.button_open_settings) {
             showPasswordDialog();
         } else if (id == R.id.auto_exposure) {
             if (mSettingsManager != null) mSettingsManager.toggleAutoExposure();
@@ -217,6 +326,16 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 mUIManager.showMainControlPanel();
             }
         }
+    }
+
+    private void updateDistanceDisplay() {
+        runOnUiThread(() -> {
+            // 需要在布局中添加一个TextView来显示距离
+            TextView distanceText = findViewById(R.id.distance_display);
+            if (distanceText != null) {
+                distanceText.setText("距离: " + mCurrentDistance + " cm");
+            }
+        });
     }
 
     private void showPasswordDialog() {

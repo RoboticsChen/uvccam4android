@@ -12,7 +12,7 @@
         <Button
             android:id="@+id/open_camera_button"
             android:layout_width="0dp"
-            android:layout_height="56dp"
+            android:layout_height="64dp"
             android:layout_marginEnd="16dp"
             android:layout_weight="1"
             android:text="打开相机" />
@@ -20,7 +20,7 @@
         <Button
             android:id="@+id/close_camera_button"
             android:layout_width="0dp"
-            android:layout_height="56dp"
+            android:layout_height="64dp"
             android:layout_weight="1"
             android:text="关闭相机" />
     </LinearLayout>
@@ -34,7 +34,7 @@
         <Button
             android:id="@+id/open_test_1_button"
             android:layout_width="0dp"
-            android:layout_height="56dp"
+            android:layout_height="64dp"
             android:layout_marginEnd="16dp"
             android:layout_weight="1"
             android:text="开始测试1" />
@@ -42,7 +42,7 @@
         <Button
             android:id="@+id/close_test_1_button"
             android:layout_width="0dp"
-            android:layout_height="56dp"
+            android:layout_height="64dp"
             android:layout_weight="1"
             android:text="关闭测试1" />
     </LinearLayout>
@@ -56,7 +56,7 @@
         <Button
             android:id="@+id/open_test_2_button"
             android:layout_width="0dp"
-            android:layout_height="56dp"
+            android:layout_height="64dp"
             android:layout_marginEnd="16dp"
             android:layout_weight="1"
             android:text="开始测试2" />
@@ -64,7 +64,7 @@
         <Button
             android:id="@+id/close_test_2_button"
             android:layout_width="0dp"
-            android:layout_height="56dp"
+            android:layout_height="64dp"
             android:layout_weight="1"
             android:text="关闭测试2" />
     </LinearLayout>
@@ -72,28 +72,28 @@
     <Button
         android:id="@+id/open_test_main_button"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="64dp"
         android:layout_marginTop="16dp"
         android:text="开始主筛查" />
 
     <Button
         android:id="@+id/close_test_main_button"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="64dp"
         android:layout_marginTop="16dp"
         android:text="关闭主筛查" />
 
-    <Button
-        android:id="@+id/capture"
-        android:layout_width="match_parent"
-        android:layout_height="56dp"
-        android:layout_marginTop="16dp"
-        android:text="拍照" />
+<!--    <Button-->
+<!--        android:id="@+id/capture"-->
+<!--        android:layout_width="match_parent"-->
+<!--        android:layout_height="64dp"-->
+<!--        android:layout_marginTop="16dp"-->
+<!--        android:text="拍照" />-->
 
     <Button
         android:id="@+id/button_open_settings"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="64dp"
         android:layout_marginTop="16dp"
         android:text="参数设置" />
 </LinearLayout>

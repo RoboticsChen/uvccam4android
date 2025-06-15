@@ -6,6 +6,8 @@ import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.FrameLayout;
+import android.widget.Toast;
+
 import com.serenegiant.usb.Size;
 import com.serenegiant.widget.AspectRatioSurfaceView;
 
@@ -33,8 +35,8 @@ public class UIManager implements CameraManager.CameraStateListener {
     private Button mCloseTest2Button;
     private Button mOpenTestMainButton;
     private Button mCloseTestMainButton;
-    private Button mCaptureButton;
     private Button mOpenSettingsButton;
+    private boolean isTest1Running = false;
 
     public UIManager(Context context, CameraManager cameraManager, FormatManager formatManager, SettingsManager settingsManager) {
         mContext = context;
@@ -75,7 +77,6 @@ public class UIManager implements CameraManager.CameraStateListener {
         mCloseTest2Button = mMainControlPanelView.findViewById(R.id.close_test_2_button);
         mOpenTestMainButton = mMainControlPanelView.findViewById(R.id.open_test_main_button);
         mCloseTestMainButton = mMainControlPanelView.findViewById(R.id.close_test_main_button);
-        mCaptureButton = mMainControlPanelView.findViewById(R.id.capture);
         mOpenSettingsButton = mMainControlPanelView.findViewById(R.id.button_open_settings);
 
         // 设置点击监听器
@@ -87,7 +88,6 @@ public class UIManager implements CameraManager.CameraStateListener {
         if (mCloseTest2Button != null) mCloseTest2Button.setOnClickListener(mMainActivity);
         if (mOpenTestMainButton != null) mOpenTestMainButton.setOnClickListener(mMainActivity);
         if (mCloseTestMainButton != null) mCloseTestMainButton.setOnClickListener(mMainActivity);
-        if (mCaptureButton != null) mCaptureButton.setOnClickListener(mMainActivity);
         if (mOpenSettingsButton != null) mOpenSettingsButton.setOnClickListener(mMainActivity);
 
         // 禁用控制项，直到相机打开
@@ -124,7 +124,6 @@ public class UIManager implements CameraManager.CameraStateListener {
         mCloseTest2Button = mMainControlPanelView.findViewById(R.id.close_test_2_button);
         mOpenTestMainButton = mMainControlPanelView.findViewById(R.id.open_test_main_button);
         mCloseTestMainButton = mMainControlPanelView.findViewById(R.id.close_test_main_button);
-        mCaptureButton = mMainControlPanelView.findViewById(R.id.capture);
         mOpenSettingsButton = mMainControlPanelView.findViewById(R.id.button_open_settings);
 
         if (mCameraManager != null && mCameraManager.isCameraOpened()) {
@@ -161,7 +160,6 @@ public class UIManager implements CameraManager.CameraStateListener {
         if (mCloseTest2Button != null) mCloseTest2Button.setEnabled(enabled);
         if (mOpenTestMainButton != null) mOpenTestMainButton.setEnabled(enabled);
         if (mCloseTestMainButton != null) mCloseTestMainButton.setEnabled(enabled);
-        if (mCaptureButton != null) mCaptureButton.setEnabled(enabled);
         if (mOpenSettingsButton != null) mOpenSettingsButton.setEnabled(enabled);
 
         if (mOpenCameraButton != null) mOpenCameraButton.setEnabled(!enabled);
@@ -195,5 +193,22 @@ public class UIManager implements CameraManager.CameraStateListener {
     public void onDeviceAttached(UsbDevice device) {
         Log.d(TAG, "onDeviceAttached: " + device.getDeviceName());
         // 不需要处理
+    }
+
+    public boolean onStartTest1() {
+        if (!isTest1Running) {
+            mOpenTest1Button.setText("拍照");
+            isTest1Running = true;
+            return false;
+        }else{
+            mOpenTest1Button.setText("开始测试1");
+            isTest1Running = false;
+            return true;
+        }
+    }
+
+    public void onStopTest1() {
+        mOpenTest1Button.setText("开始测试1");
+        isTest1Running = false;
     }
 }
